@@ -4,7 +4,7 @@
  */
 module.exports = (app) => {
   // Your code here
-  app.log.info("Yay, the app was loaded!");
+  app.log.info('Yay, the app was loaded!');
 
   async function get_reviews(context) {
     const {data: reviews} = await context.octokit.pulls.listReviews({
@@ -13,23 +13,45 @@ module.exports = (app) => {
       pull_number: context.payload.pull_request.number,
     });
 
-    return reviews.filter((review) => review.state === "APPROVED").length;
+    return reviews.filter((review) => review.state === 'APPROVED').length;
   }
-  
+
+  async function labelExists(context, labelName) {
+    const {data: labels} =
+        await context.octokit.issues.listLabelsOnIssue(context.issue());
+    return labels.some((label) => label.name === labelName);
+  }
+
   app.on('pull_request.opened', async (context) => {
-    return context.octokit.issues.addLabels(context.issue({labels:["PR: Needs first approval"]}));
+    return context.octokit.issues.addLabels(
+        context.issue({labels: ['PR: Needs first approval']}));
   })
 
-  app.on("pull_request_review.submitted", async (context) => {
+  app.on('pull_request_review.submitted', async (context) => {
     // does not work. Why?
     try {
       const count = await get_reviews(context);
       if (count == 1) {
-        context.octokit.issues.addLabels(context.issue({labels:["PR: Needs second approval"]}));
-        context.octokit.issues.removeLabel(context.issue({name: "PR: Needs first approval"}));
+        if (!await labelExists(context, 'PR: Needs second approval')) {
+          context.octokit.issues.addLabels(
+              context.issue({labels: ['PR: Needs second approval']}));
+        }
+
+        if (await labelExists(context, 'PR: Needs first approval')) {
+          context.octokit.issues.removeLabel(
+              context.issue({name: 'PR: Needs first approval'}));
+        }
+
       } else if (count == 2) {
-        context.octokit.issues.addLabels(context.issue({labels:["PR: Awaiting merge"]}));
-        context.octokit.issues.removeLabel(context.issue({name: "PR: Needs second approval"}));
+        if (!await labelExists(context, 'PR: Awaiting merge')) {
+          context.octokit.issues.addLabels(
+              context.issue({labels: ['PR: Awaiting merge']}));
+        }
+
+        if (await labelExists(context, 'PR: Needs second approval')) {
+          context.octokit.issues.removeLabel(
+              context.issue({name: 'PR: Needs second approval'}));
+        }
       }
     } catch (error) {
       // handle error
